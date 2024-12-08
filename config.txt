@@ -1,3 +1,5 @@
 arm_64bit=1
-kernel_address=0x80000
+arm_boost=1
+core_freq_min=500
 kernel=pcie-rpi400.img
+kernel_old=1
