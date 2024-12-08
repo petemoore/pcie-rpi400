@@ -27,7 +27,7 @@ _start:
   mov     x0, #0x0000000000000531
   msr     scr_el3, x0
 
-  mov     x0, #0x0000000000070000  // TODO
+  adrp    x0, VectorTableEL3
   msr     vbar_el3, x0
 
   mov     x0, #0x0000000000000040
@@ -36,7 +36,7 @@ _start:
 // setup gic
   mrs     x0, mpidr_el1
   ldr     x2, =0x00000000ff841000
-  tst     x0, #0x0000000000000003
+  tst     x0, #0x3
   b.eq    1f
   mov     w0, #0x3
   str     w0, [x2]
@@ -65,11 +65,10 @@ _start:
   eret
 
 3:
-
   ldr     x0, =0x0000000000080090  // TODO
   msr     sp_el1, x0
 
-  ldr     x0, =0x00000000000af000  // TODO
+  adrp    x0, VectorTable
   msr     vbar_el2, x0
 
   mrs     x0, cnthctl_el2
@@ -106,11 +105,10 @@ _start:
   eret
 
 4:
-
   msr     daifclr, #0x1
   msr     daifclr, #0x2
 
-  ldr     x0, =0x00000000000af000  // TODO
+  adrp    x0, VectorTable
   msr     vbar_el1, x0
 
   mov     x1, #0x00000000000004ff
@@ -136,3 +134,233 @@ _start:
 sleep_core:
   wfe                              // Sleep until woken.
   b       sleep_core               // Go back to sleep.
+
+UnexpectedStub:
+  mrs    x0, esr_el1
+  mrs    x1, spsr_el1
+  mov    x2, x30
+  mrs    x3, elr_el1
+  mrs    x4, sp_el0
+  mov    x5, sp
+  mrs    x6, far_el1
+  str    x6, [sp, #-16]!
+  stp    x4, x5, [sp, #-16]!
+  stp    x2, x3, [sp, #-16]!
+  stp    x0, x1, [sp, #-16]!
+  mov    x0, #0x0
+  mov    x1, sp
+  b    ExceptionHandler
+
+SynchronousStub:
+  mrs    x0, esr_el1
+  mrs    x1, spsr_el1
+  mov    x2, x30
+  mrs    x3, elr_el1
+  mrs    x4, sp_el0
+  mov    x5, sp
+  mrs    x6, far_el1
+  str    x6, [sp, #-16]!
+  stp    x4, x5, [sp, #-16]!
+  stp    x2, x3, [sp, #-16]!
+  stp    x0, x1, [sp, #-16]!
+  mov    x0, #0x1
+  mov    x1, sp
+  b    ExceptionHandler
+
+SErrorStub:
+  mrs    x0, esr_el1
+  mrs    x1, spsr_el1
+  mov    x2, x30
+  mrs    x3, elr_el1
+  mrs    x4, sp_el0
+  mov    x5, sp
+  mrs    x6, far_el1
+  str    x6, [sp, #-16]!
+  stp    x4, x5, [sp, #-16]!
+  stp    x2, x3, [sp, #-16]!
+  stp    x0, x1, [sp, #-16]!
+  mov    x0, #0x2
+  mov    x1, sp
+  b    ExceptionHandler
+
+IRQStub:
+  stp    x29, x30, [sp, #-16]!
+  mrs    x29, elr_el1
+  mrs    x30, spsr_el1
+  stp    x29, x30, [sp, #-16]!
+  msr    daifclr, #0x1
+  stp    x27, x28, [sp, #-16]!
+  stp    x25, x26, [sp, #-16]!
+  stp    x23, x24, [sp, #-16]!
+  stp    x21, x22, [sp, #-16]!
+  stp    x19, x20, [sp, #-16]!
+  stp    x17, x18, [sp, #-16]!
+  stp    x15, x16, [sp, #-16]!
+  stp    x13, x14, [sp, #-16]!
+  stp    x11, x12, [sp, #-16]!
+  stp    x9, x10, [sp, #-16]!
+  stp    x7, x8, [sp, #-16]!
+  stp    x5, x6, [sp, #-16]!
+  stp    x3, x4, [sp, #-16]!
+  stp    x1, x2, [sp, #-16]!
+  str    x0, [sp, #-16]!
+  ldr    x0, af9b8 <HVCStub+0x18>
+  str    x29, [x0]
+  bl    ab400 <InterruptHandler>
+  ldr    x0, [sp], #16
+  ldp    x1, x2, [sp], #16
+  ldp    x3, x4, [sp], #16
+  ldp    x5, x6, [sp], #16
+  ldp    x7, x8, [sp], #16
+  ldp    x9, x10, [sp], #16
+  ldp    x11, x12, [sp], #16
+  ldp    x13, x14, [sp], #16
+  ldp    x15, x16, [sp], #16
+  ldp    x17, x18, [sp], #16
+  ldp    x19, x20, [sp], #16
+  ldp    x21, x22, [sp], #16
+  ldp    x23, x24, [sp], #16
+  ldp    x25, x26, [sp], #16
+  ldp    x27, x28, [sp], #16
+  msr    daifset, #0x1
+  ldp    x29, x30, [sp], #16
+  msr    elr_el1, x29
+  msr    spsr_el1, x30
+  ldp    x29, x30, [sp], #16
+  eret
+
+FIQStub:
+  stp    x29, x30, [sp, #-16]!
+  stp    x27, x28, [sp, #-16]!
+  stp    x25, x26, [sp, #-16]!
+  stp    x23, x24, [sp, #-16]!
+  stp    x21, x22, [sp, #-16]!
+  stp    x19, x20, [sp, #-16]!
+  stp    x17, x18, [sp, #-16]!
+  stp    x15, x16, [sp, #-16]!
+  stp    x13, x14, [sp, #-16]!
+  stp    x11, x12, [sp, #-16]!
+  stp    x9, x10, [sp, #-16]!
+  stp    x7, x8, [sp, #-16]!
+  stp    x5, x6, [sp, #-16]!
+  stp    x3, x4, [sp, #-16]!
+  stp    x1, x2, [sp, #-16]!
+  str    x0, [sp, #-16]!
+  ldr    x2, af9c0 <HVCStub+0x20>
+  ldr    x1, [x2]
+  cmp    x1, #0x0
+  b.eq   ?????
+  ldr    x0, [x2, #8]
+  blr    x1
+  ldr    x0, [sp], #16
+  ldp    x1, x2, [sp], #16
+  ldp    x3, x4, [sp], #16
+  ldp    x5, x6, [sp], #16
+  ldp    x7, x8, [sp], #16
+  ldp    x9, x10, [sp], #16
+  ldp    x11, x12, [sp], #16
+  ldp    x13, x14, [sp], #16
+  ldp    x15, x16, [sp], #16
+  ldp    x17, x18, [sp], #16
+  ldp    x19, x20, [sp], #16
+  ldp    x21, x22, [sp], #16
+  ldp    x23, x24, [sp], #16
+  ldp    x25, x26, [sp], #16
+  ldp    x27, x28, [sp], #16
+  ldp    x29, x30, [sp], #16
+  eret
+  ldr    x1, ???????????
+  mov    w0, #0x0
+  str    w0, [x1]
+  b    ??????????
+
+SMCStub:
+  ldr    x2, ??????????
+  mov    sp, x2
+  str    x30, [sp, #-16]!
+  bl    SecureMonitorHandler
+  ldr    x30, [sp], #16
+  eret
+
+HVCStub:
+  mrs    x0, spsr_el2
+  and    x0, x0, #0xfffffffffffffff0
+  mov    x1, #0x9                       // #9
+  orr    x0, x0, x1
+  msr    spsr_el2, x0
+  eret
+  .word    0x000bd070
+  .word    0x00000000
+  .word    0x000bd058
+  .word    0x00000000
+  .word    0xfe00b20c
+  .word    0x00000000
+  .word    0x000bd390
+
+.align 12
+VectorTableEL3:
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       SMCStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+
+.align 12
+VectorTable:
+  b       SynchronousStub
+.align 7
+  b       IRQStub
+.align 7
+  b       FIQStub
+.align 7
+  b       SErrorStub
+.align 7
+  b       SynchronousStub
+.align 7
+  b       IRQStub
+.align 7
+  b       FIQStub
+.align 7
+  b       SErrorStub
+.align 7
+  b       HVCStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
+.align 7
+  b       UnexpectedStub
