@@ -1,0 +1,3 @@
+arm_64bit=1
+kernel_address=0x80000
+kernel=pcie-rpi400.img
