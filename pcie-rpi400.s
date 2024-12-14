@@ -3,18 +3,17 @@
 .text
 
 _start:
-
   mov     x0, #0x00000000ff800000
   str     wzr, [x0]
   mov     w1, #0x0000000080000000
   str     w1, [x0, #8]
 
-  mrs     x0, s3_1_c11_c0_2        // l2ctlr_el1
+  mrs     x0, s3_1_c11_c0_2                       // l2ctlr_el1
   mov     x1, #0x0000000000000022
   orr     x0, x0, x1
   msr     s3_1_c11_c0_2, x0
 
-  ldr     x0, =0x000000000337f980  // 54,000,000 Hz
+  ldr     x0, =0x000000000337f980                 // 54,000,000 Hz
   msr     cntfrq_el0, x0
 
   msr     cntvoff_el2, xzr
@@ -27,29 +26,31 @@ _start:
   adrp    x0, VectorTableEL3
   msr     vbar_el3, x0
 
+  mov     sp, x0
+
   mov     x0, #0x0000000000000040
-  msr     s3_1_c15_c2_1, x0        // cpuectlr_el1 
+  msr     s3_1_c15_c2_1, x0                       // cpuectlr_el1
 
 // setup gic
-  mrs     x0, mpidr_el1
-  ldr     x2, =0x00000000ff841000
-  tst     x0, #0x3
-  b.eq    1f
-  mov     w0, #0x3
-  str     w0, [x2]
-1:
-  add     x1, x2, #0x0000000000001000
-  mov     w0, #0x000001e7
-  str     w0, [x1]
-  mov     w0, #0x000000ff
-  str     w0, [x1, #4]
-  add     x2, x2, #0x80
-  mov     x0, #0x20
-  mov     w1, #0xffffffff
-  2:
-    subs    x0, x0, #0x4
-    str     w1, [x2, x0]
-    b.ne    2b
+//   mrs     x0, mpidr_el1
+//   ldr     x2, =0x00000000ff841000
+//   tst     x0, #0x3
+//   b.eq    1f
+//   mov     w0, #0x3
+//   str     w0, [x2]
+// 1:
+//   add     x1, x2, #0x0000000000001000
+//   mov     w0, #0x000001e7
+//   str     w0, [x1]
+//   mov     w0, #0x000000ff
+//   str     w0, [x1, #4]
+//   add     x2, x2, #0x80
+//   mov     x0, #0x20
+//   mov     w1, #0xffffffff
+//   2:
+//     subs    x0, x0, #0x4
+//     str     w1, [x2, x0]
+//     b.ne    2b
 
   ldr     x0, =0x0000000030c50830
   msr     sctlr_el2, x0
@@ -61,18 +62,66 @@ _start:
   msr     elr_el3, x0
   eret
 
-  mrs     x0, mpidr_el1            // x0 = Multiprocessor Affinity Register.
-  and     x0, x0, #0x3             // x0 = core number.
-  cbnz    x0, sleep_core           // Put all cores except core 0 to sleep.
+3:
+  mrs     x0, mpidr_el1                           // x0 = Multiprocessor Affinity Register.
+  and     x0, x0, #0x3                            // x0 = core number.
+  cbnz    x0, sleep_core                          // Put all cores except core 0 to sleep.
 
   adrp    x0, 0x2000000
   mov     sp, x0
+
+
+  mrs     x0, currentel                           // check if already in EL1t mode?
+  cmp     x0, #0x4
+  b.eq    4f                                      // skip ahead, if already at EL1t, no work to do
+  ldr     x0, =0x0000000000308000                 // IRQ, FIQ and exception handler run in EL1h
+  msr     sp_el1, x0                              // init their stack
+  adrp    x0, VectorTable                         // init exception vector table for EL2
+  msr     vbar_el2, x0                            // switch to el1_m
+  mrs     x0, cnthctl_el2                         // Initialize Generic Timers
+  orr     x0, x0, #0x3                            // Enable EL1 access to timers
+  msr     cnthctl_el2, x0
+  msr     cntvoff_el2, xzr
+  mrs     x0, midr_el1                            // Initilize MPID/MPIDR registers
+  mrs     x1, mpidr_el1
+  msr     vpidr_el2, x0
+  msr     vmpidr_el2, x1
+  mov     x0, #0x33ff                             // Disable coprocessor traps
+  msr     cptr_el2, x0                            // Disable coprocessor traps to EL2
+  msr     hstr_el2, xzr                           // Disable coprocessor traps to EL2
+  mov     x0, #0x300000
+  msr     cpacr_el1, x0                           // Enable FP/SIMD at EL1
+  mov     x0, #0x80000000                         // 64bit EL1
+  msr     hcr_el2, x0
+                                                  // SCTLR_EL1 initialization
+                                                  //
+                                                  // setting RES1 bits (29,28,23,22,20,11) to 1
+                                                  // and RES0 bits (31,30,27,21,17,13,10,6) +
+                                                  // UCI,EE,EOE,WXN,nTWE,nTWI,UCT,DZE,I,UMA,SED,ITD,
+                                                  // CP15BEN,SA0,SA,C,A,M to 0
+  mov     x0, #0x800
+  movk    x0, #0x30d0, lsl #16
+  msr     sctlr_el1, x0                           // SCTLR_EL1 = 0x30d00800
+  mov     x0, #0x3c4                              // Return to the EL1_SP1 mode from EL2
+  msr     spsr_el2, x0                            // EL1_SP0 | D | A | I | F
+  adr     x0, 4f
+  msr     elr_el2, x0
+  eret
+
+4:
+  ldr     x0, =0x00000000002a0000                 // main thread runs in EL1t and uses sp_el0
+  mov     sp, x0                                  // init its stack
+  adrp    x0, VectorTable                         // init exception vector table
+  msr     vbar_el1, x0
+
+
+
+
   bl      uart_init
   adr     x0, msg_hello_world
   bl      uart_puts
 
-3:
-  ldr     x0, =0x0000000000080090  // TODO
+  ldr     x0, =0x0000000000080090                 // TODO
   msr     sp_el1, x0
 
   adrp    x0, VectorTable
@@ -121,21 +170,21 @@ _start:
   mov     x1, #0x00000000000004ff
   msr     mair_el1, x1
 
-  mov     x0, #0xffffffffffffffff  // TODO
+  mov     x0, #0xffffffffffffffff                 // TODO
   msr     ttbr0_el1, x0
 
   mrs     x0, tcr_el1
-  ldr     x2, =0xfffffff9ffbf755c  // 0b1111111111111111111111111111100111111111101111110111010101011100
-  and     x0, x0, x2               // 0b-----------------------------00----------0------0---0-0-0-0---00
-  ldr     x1, =0x000000010080751c  // 0b0000000000000000000000000000000100000000100000000111010100011100
-  orr     x0, x0, x1               // 0b-----------------------------001--------10------011101010-011100
+  ldr     x2, =0xfffffff9ffbf755c                 // 0b1111111111111111111111111111100111111111101111110111010101011100
+  and     x0, x0, x2                              // 0b-----------------------------00----------0------0---0-0-0-0---00
+  ldr     x1, =0x000000010080751c                 // 0b0000000000000000000000000000000100000000100000000111010100011100
+  orr     x0, x0, x1                              // 0b-----------------------------001--------10------011101010-011100
   msr     tcr_el1, x0
 
   mrs     x0, sctlr_el1
-  ldr     x2, =0xfffffffffff7fffd  // 0b1111111111111111111111111111111111111111111101111111111111111101
-  and     x0, x0, x2               // 0b--------------------------------------------0-----------------0-
-  mov     x1, #0x0000000000001005  // 0b0000000000000000000000000000000000000000000000000001000000000101
-  orr     x0, x0, x1               // 0b--------------------------------------------0------1---------101
+  ldr     x2, =0xfffffffffff7fffd                 // 0b1111111111111111111111111111111111111111111101111111111111111101
+  and     x0, x0, x2                              // 0b--------------------------------------------0-----------------0-
+  mov     x1, #0x0000000000001005                 // 0b0000000000000000000000000000000000000000000000000001000000000101
+  orr     x0, x0, x1                              // 0b--------------------------------------------0------1---------101
   msr     sctlr_el1, x0
 
   b       sleep_core
@@ -145,17 +194,17 @@ msg_hello_world:
 
 .align 2
 sleep_core:
-  wfe                              // Sleep until woken.
-  b       sleep_core               // Go back to sleep.
+  wfe                                             // Sleep until woken.
+  b       sleep_core                              // Go back to sleep.
 
 UnexpectedStub:
-  b    ExceptionHandler
+  b       ExceptionHandler
 
 SynchronousStub:
-  b    ExceptionHandler
+  b       ExceptionHandler
 
 SErrorStub:
-  b    ExceptionHandler
+  b       ExceptionHandler
 
 IRQStub:
   eret
@@ -275,7 +324,7 @@ uart_newline:
 #   x2 = 0
 #   x3 = [AUX_MU_LSR]
 uart_puts:
-  adrp     x1, 0xfe215000
+  adrp    x1, 0xfe215000
 1:
   ldrb    w2, [x0], #1
   cbz     w2, 5f
