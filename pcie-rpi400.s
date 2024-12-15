@@ -2,7 +2,18 @@
 
 .text
 
+.align 2
 _start:
+
+  mrs     x0, mpidr_el1            // x0 = Multiprocessor Affinity Register.
+  and     x0, x0, #0x3             // x0 = core number.
+  cbnz    x0, sleep_core           // Put all cores except core 0 to sleep.
+  adrp    x0, 0x2000000
+  mov     sp, x0
+  bl      uart_init
+  adr     x0, msg_initialising
+  bl      uart_puts
+
   mov     x0, #0x00000000ff800000
   str     wzr, [x0]
   mov     w1, #0x0000000080000000
@@ -32,25 +43,25 @@ _start:
   msr     s3_1_c15_c2_1, x0                       // cpuectlr_el1
 
 // setup gic
-//   mrs     x0, mpidr_el1
-//   ldr     x2, =0x00000000ff841000
-//   tst     x0, #0x3
-//   b.eq    1f
-//   mov     w0, #0x3
-//   str     w0, [x2]
-// 1:
-//   add     x1, x2, #0x0000000000001000
-//   mov     w0, #0x000001e7
-//   str     w0, [x1]
-//   mov     w0, #0x000000ff
-//   str     w0, [x1, #4]
-//   add     x2, x2, #0x80
-//   mov     x0, #0x20
-//   mov     w1, #0xffffffff
-//   2:
-//     subs    x0, x0, #0x4
-//     str     w1, [x2, x0]
-//     b.ne    2b
+  mrs     x0, mpidr_el1
+  ldr     x2, =0x00000000ff841000
+  tst     x0, #0x3
+  b.eq    1f
+  mov     w0, #0x3
+  str     w0, [x2]
+1:
+  add     x1, x2, #0x0000000000001000
+  mov     w0, #0x000001e7
+  str     w0, [x1]
+  mov     w0, #0x000000ff
+  str     w0, [x1, #4]
+  add     x2, x2, #0x80
+  mov     x0, #0x20
+  mov     w1, #0xffffffff
+  2:
+    subs    x0, x0, #0x4
+    str     w1, [x2, x0]
+    b.ne    2b
 
   ldr     x0, =0x0000000030c50830
   msr     sctlr_el2, x0
@@ -63,17 +74,10 @@ _start:
   eret
 
 3:
-  mrs     x0, mpidr_el1                           // x0 = Multiprocessor Affinity Register.
-  and     x0, x0, #0x3                            // x0 = core number.
-  cbnz    x0, sleep_core                          // Put all cores except core 0 to sleep.
-
-  adrp    x0, 0x2000000
-  mov     sp, x0
-
 
   mrs     x0, currentel                           // check if already in EL1t mode?
   cmp     x0, #0x4
-  b.eq    4f                                      // skip ahead, if already at EL1t, no work to do
+  b.eq    5f                                      // skip ahead, if already at EL1t, no work to do
   ldr     x0, =0x0000000000308000                 // IRQ, FIQ and exception handler run in EL1h
   msr     sp_el1, x0                              // init their stack
   adrp    x0, VectorTable                         // init exception vector table for EL2
@@ -117,11 +121,7 @@ _start:
 
 
 
-  bl      uart_init
-  adr     x0, msg_hello_world
-  bl      uart_puts
-
-  ldr     x0, =0x0000000000080090                 // TODO
+  adrp    x0, 0x2001000
   msr     sp_el1, x0
 
   adrp    x0, VectorTable
@@ -156,11 +156,15 @@ _start:
   mov     x0, #0x00000000000003c4
   msr     spsr_el2, x0
 
-  adr     x0, 4f
+  adr     x0, 5f
   msr     elr_el2, x0
   eret
 
-4:
+5:
+
+mov x0, 'c'
+bl uart_send
+
   msr     daifclr, #0x1
   msr     daifclr, #0x2
 
@@ -187,12 +191,12 @@ _start:
   orr     x0, x0, x1                              // 0b--------------------------------------------0------1---------101
   msr     sctlr_el1, x0
 
+mov x0, 'd'
+bl uart_send
+
   b       sleep_core
 
-msg_hello_world:
-.asciz    "Hello World\n"
 
-.align 2
 sleep_core:
   wfe                                             // Sleep until woken.
   b       sleep_core                              // Go back to sleep.
@@ -221,6 +225,7 @@ HVCStub:
 ExceptionHandler:
   b       sleep_core
 
+
 # ------------------------------------------------------------------------------
 # See "BCM2837 ARM Peripherals" datasheet pages 90-104:
 #   https://cs140e.sergio.bz/docs/BCM2837-ARM-Peripherals.pdf
@@ -229,13 +234,10 @@ ExceptionHandler:
 # GPPUD,          0x0094                       // GPIO Pin Pull-up/down Enable
 # GPPUDCLK0,      0x0098                       // GPIO Pin Pull-up/down Enable Clock 0
 
-.text
-
 # ------------------------------------------------------------------------------
 # Initialise the Mini UART interface for logging over serial port.
 # Note, this is Broadcomm's own UART, not the ARM licenced UART interface.
 # ------------------------------------------------------------------------------
-.align 2
 uart_init:
   adrp    x1, 0xfe215000
   ldr     w2, [x1, #0x4]                          // w2 = [AUX_ENABLES] (Auxiliary enables)
@@ -419,6 +421,9 @@ hex_x0:
   subs    w2, w2, #4
   b.ne    1b
   ret
+
+msg_initialising:
+.asciz    "Initialising...\r\n"
 
 
 .align 12

@@ -1,5 +1,8 @@
 arm_64bit=1
 arm_boost=1
 core_freq_min=500
+disable_commandline_tags=1
+enable_jtag_gpio=1
+gpu_mem=64
 kernel=pcie-rpi400.img
 kernel_old=1
