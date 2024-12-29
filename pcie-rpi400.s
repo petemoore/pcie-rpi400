@@ -1,3 +1,19 @@
+.macro log char
+  stp     x29, x30, [sp, #-16]!
+  stp     x0, x1, [sp, #-16]!
+  stp     x2, x3, [sp, #-16]!
+  stp     x4, x5, [sp, #-16]!
+  mrs     x4, nzcv                                // copy N, Z, C, and V flags into x4 (not disturbed by following uart_puts call)
+  mov     x0, #\char
+  bl      uart_send
+  bl      uart_newline
+  msr     nzcv, x4                                // restore flags
+  ldp     x4, x5, [sp], #16
+  ldp     x2, x3, [sp], #16
+  ldp     x0, x1, [sp], #16
+  ldp     x29, x30, [sp], #16
+.endm
+
 .global _start
 
 .text
@@ -60,26 +76,31 @@ _start:
   mrs     x0, mpidr_el1
   ldr     x2, =0x00000000ff841000
   tst     x0, #0x3
-  b.eq    1f
-  mov     w0, #0x3
+  b.eq    1f                                      // primary core
+  mov     w0, #0x3                                // Enable group 0 and 1 IRQs from distributor
   str     w0, [x2]
 1:
   add     x1, x2, #0x0000000000001000
   mov     w0, #0x000001e7
-  str     w0, [x1]
+  str     w0, [x1]                                // Enable group 1 IRQs from CPU interface
   mov     w0, #0x000000ff
-  str     w0, [x1, #4]
+  str     w0, [x1, #4]                            // priority mask
   add     x2, x2, #0x80
   mov     x0, #0x20
-  mov     w1, #0xffffffff
+  mov     w1, #0xffffffff                         // group 1 all the things
   2:
     subs    x0, x0, #0x4
     str     w1, [x2, x0]
     b.ne    2b
 
+  /*
+   * Set up SCTLR_EL2
+   * All set bits below are res1. LE, no WXN/I/SA/C/A/M
+   */
   ldr     x0, =0x0000000030c50830
   msr     sctlr_el2, x0
 
+  /* Switch to EL2 */
   mov     x0, #0x00000000000003c9
   msr     spsr_el3, x0
 
@@ -88,7 +109,6 @@ _start:
   eret
 
 3:
-
   mrs     x0, currentel                           // check if already in EL1t mode?
   cmp     x0, #0x4
   b.eq    5f                                      // skip ahead, if already at EL1t, no work to do
@@ -269,11 +289,6 @@ _start:
 
 # circle sctlr_el1: 0x0000000030d01805            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 0 1
 # spectrum4 value:  0x0000000030d00801            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1
-
-
-
-
-
 
 
 
