@@ -8,41 +8,55 @@ _start:
   mrs     x0, mpidr_el1            // x0 = Multiprocessor Affinity Register.
   and     x0, x0, #0x3             // x0 = core number.
   cbnz    x0, sleep_core           // Put all cores except core 0 to sleep.
+
   adrp    x0, 0x2000000
   mov     sp, x0
   bl      uart_init
   adr     x0, msg_initialising
   bl      uart_puts
 
+  /*
+   * LOCAL_CONTROL:
+   * Bit 8 clear: Increment by 1 (vs. 2).
+   * Bit 7 clear: Timer source is 19.2MHz crystal (vs. APB).
+   */
   mov     x0, #0x00000000ff800000
   str     wzr, [x0]
   mov     w1, #0x0000000080000000
   str     w1, [x0, #8]
 
+  /* Set L2 read/write cache latency to 3 */
   mrs     x0, s3_1_c11_c0_2                       // l2ctlr_el1
   mov     x1, #0x0000000000000022
   orr     x0, x0, x1
   msr     s3_1_c11_c0_2, x0
 
+  /* Set up CNTFRQ_EL0 */
   ldr     x0, =0x000000000337f980                 // 54,000,000 Hz
   msr     cntfrq_el0, x0
 
+  /* Set up CNTVOFF_EL2 */
   msr     cntvoff_el2, xzr
 
+  /* Enable FP/SIMD */
+  /* bit 10 (TFP) set to 0 */
   msr     cptr_el3, xzr
 
+  /* Set up SCR */
   mov     x0, #0x0000000000000531
   msr     scr_el3, x0
 
+  /* Set up secure monitor entry and stack */
   adrp    x0, VectorTableEL3
   msr     vbar_el3, x0
-
   mov     sp, x0
 
+  /* Set SMPEN */
   mov     x0, #0x0000000000000040
   msr     s3_1_c15_c2_1, x0                       // cpuectlr_el1
 
-// setup gic
+// Set up GIC
+// Called from secure mode - set all interrupts to group 1 and enable.
   mrs     x0, mpidr_el1
   ldr     x2, =0x00000000ff841000
   tst     x0, #0x3
@@ -78,57 +92,21 @@ _start:
   mrs     x0, currentel                           // check if already in EL1t mode?
   cmp     x0, #0x4
   b.eq    5f                                      // skip ahead, if already at EL1t, no work to do
-  ldr     x0, =0x0000000000308000                 // IRQ, FIQ and exception handler run in EL1h
-  msr     sp_el1, x0                              // init their stack
-  adrp    x0, VectorTable                         // init exception vector table for EL2
-  msr     vbar_el2, x0                            // switch to el1_m
-  mrs     x0, cnthctl_el2                         // Initialize Generic Timers
-  orr     x0, x0, #0x3                            // Enable EL1 access to timers
-  msr     cnthctl_el2, x0
-  msr     cntvoff_el2, xzr
-  mrs     x0, midr_el1                            // Initilize MPID/MPIDR registers
-  mrs     x1, mpidr_el1
-  msr     vpidr_el2, x0
-  msr     vmpidr_el2, x1
-  mov     x0, #0x33ff                             // Disable coprocessor traps
-  msr     cptr_el2, x0                            // Disable coprocessor traps to EL2
-  msr     hstr_el2, xzr                           // Disable coprocessor traps to EL2
-  mov     x0, #0x300000
-  msr     cpacr_el1, x0                           // Enable FP/SIMD at EL1
-  mov     x0, #0x80000000                         // 64bit EL1
-  msr     hcr_el2, x0
-                                                  // SCTLR_EL1 initialization
-                                                  //
-                                                  // setting RES1 bits (29,28,23,22,20,11) to 1
-                                                  // and RES0 bits (31,30,27,21,17,13,10,6) +
-                                                  // UCI,EE,EOE,WXN,nTWE,nTWI,UCT,DZE,I,UMA,SED,ITD,
-                                                  // CP15BEN,SA0,SA,C,A,M to 0
-  mov     x0, #0x800
-  movk    x0, #0x30d0, lsl #16
-  msr     sctlr_el1, x0                           // SCTLR_EL1 = 0x30d00800
-  mov     x0, #0x3c4                              // Return to the EL1_SP1 mode from EL2
-  msr     spsr_el2, x0                            // EL1_SP0 | D | A | I | F
-  adr     x0, 4f
-  msr     elr_el2, x0
-  eret
 
 4:
   ldr     x0, =0x00000000002a0000                 // main thread runs in EL1t and uses sp_el0
   mov     sp, x0                                  // init its stack
-  adrp    x0, VectorTable                         // init exception vector table
+  adrp    x0, VectorTable                         // init exception vector table for EL2
   msr     vbar_el1, x0
 
+  adrp    x0, 0x2001000                           // IRQ, FIQ and exception handler run in EL1h
+  msr     sp_el1, x0                              // init their stack
 
-
-
-  adrp    x0, 0x2001000
-  msr     sp_el1, x0
-
-  adrp    x0, VectorTable
+  adrp    x0, VectorTable                         // init exception vector table
   msr     vbar_el2, x0
 
-  mrs     x0, cnthctl_el2
-  orr     x0, x0, #0x0000000000000003
+  mrs     x0, cnthctl_el2                         // Initialize Generic Timers
+  orr     x0, x0, #0x0000000000000003             // Enable EL1 access to timers
   msr     cnthctl_el2, x0
 
   msr     cntvoff_el2, xzr
@@ -139,40 +117,168 @@ _start:
   mrs     x1, mpidr_el1
   msr     vmpidr_el2, x1
 
-  mov     x0, #0x00000000000033ff
-  msr     cptr_el2, x0
+  mov     x0, #0x00000000000033ff                 // Disable coprocessor traps
+  msr     cptr_el2, x0                            // Disable coprocessor traps to EL2
 
-  msr     hstr_el2, xzr
+  msr     hstr_el2, xzr                           // Disable coprocessor traps to EL2
 
   mov     x0, #0x0000000000300000
-  msr     cpacr_el1, x0
+  msr     cpacr_el1, x0                           // Enable FP/SIMD at EL1
 
-  mov     x0, #0x0000000080000000
+  mov     x0, #0x0000000080000000                 // 64bit EL1
   msr     hcr_el2, x0
 
+                                                  // SCTLR_EL1 initialization
+                                                  //
+                                                  // setting RES1 bits (29,28,23,22,20,11) to 1
+                                                  // and RES0 bits (31,30,27,21,17,13,10,6) +
+                                                  // UCI,EE,EOE,WXN,nTWE,nTWI,UCT,DZE,I,UMA,SED,ITD,
+                                                  // CP15BEN,SA0,SA,C,A,M to 0
   ldr     x0, =0x0000000030d00800
-  msr     sctlr_el1, x0
+  msr     sctlr_el1, x0                           // SCTLR_EL1 = 0x30d00800
 
-  mov     x0, #0x00000000000003c4
-  msr     spsr_el2, x0
+  mov     x0, #0x00000000000003c4                 // Return to the EL1_SP1 mode from EL2
+  msr     spsr_el2, x0                            // EL1_SP0 | D | A | I | F
 
   adr     x0, 5f
   msr     elr_el2, x0
   eret
 
 5:
-
-mov x0, 'c'
-bl uart_send
-
   msr     daifclr, #0x1
   msr     daifclr, #0x2
 
   adrp    x0, VectorTable
   msr     vbar_el1, x0
 
-  mov     x1, #0x00000000000004ff
-  msr     mair_el1, x1
+# Configure page tables
+
+  adrp    x0, pg_dir                              // x0 = pg_dir (page aligned, so no additional add needed)
+  mov     x1, pg_dir_end - pg_dir                 // clear 10 64KB pages
+  bl      memzero
+  adrp    x0, pg_dir
+  mov     x1, #0x1003
+  add     x1, x0, x1
+  str     x1, [x0]                                // [pg_dir] = pg_dir + 0x1003. PGD table complete, only one entry required.
+  add     x0, x0, #0x1000
+  add     x1, x1, #0x1000
+  ldr     x3, =0x0000000100000000
+  lsr     x2, x3, #30
+  3:
+    str     x1, [x0], #8                          // [pg_dir + 0x1000 + i*8] = pg_dir + 0x1003 + i*0x1000. PUD table complete for 0 - peripherals end.
+    add     x1, x1, #0x1000
+    subs    x2, x2, #0x1
+    b.ne    3b
+  adrp    x0, (pg_dir+0x2000)
+  mov     x1, #0x401                              // bit 10: AF=1, bits 2-4: mair attr index = 0 (normal), bits 0-1: 1 (block descriptor)
+  ldr     x2, =0x00000000fc000000
+  4:                                              // creates 2016 entries for 0x00000000 - 0xfc000000
+    str     x1, [x0], #8                          // [pg_dir + 0x2000 + i*8] = 0x401 + i*0x200000. PMD table entries complete for 0 - peripherals start address.
+    add     x1, x1, #0x200000
+    cmp     x1, x2
+    b.lt    4b
+  add     x1, x1, #0x4                            // bits 2-4: mair attr index = 1 (device)
+  5:                                              // creates 32 entries for 0xfc000000 - 0x100000000
+    str     x1, [x0], #8                          // [pg_dir + 0x2000 + i*8] = 0x405 + i*0x200000. PMD table entries complete for peripherals start to peripherals end address.
+    add     x1, x1, #0x200000
+    cmp     x1, x3
+    b.lt    5b
+  adrp    x0, (pg_dir+0x1000)
+  adrp    x1, (pg_dir+0x6000)
+  orr     x2, x1, #0b11                           // bit 0 = 1 => valid descriptor. bit 1 = 1 => table descriptor
+  str     x2, [x0, 0xc0]                          // [pg_dir+0x10c0] = pg_dir+0x6003. PUD table entry for xHCI region (entry 0x600000000-0x640000000 covers more than xHCI).
+  mov     x2, 0x600000000                         // x2 = xHCI start (24GB)
+  orr     x3, x2, 0x4000000                       // x3 = xHCI end (64MB higher) (0x604000000) - so we don't fill entire table, only first 32/512 entries
+  add     x2, x2, #0x409                          // bit 10: AF=1, bits 2-4: mair attr index = 2 (coherent), bits 0-1: 1 (block descriptor)
+  6:                                              // creates 32 entries for xHCI addresses 0x600000000 - 0x604000000
+    str     x2, [x1], #8                          // [pg_dir + 0x6000 + i*8] = 0x409 + i*0x200000. PMD table entries complete for xHCI region.
+    add     x2, x2, #0x200000
+    cmp     x2, x3
+    b.lt    6b
+  adrp    x0, pg_dir
+  msr     ttbr0_el1, x0                           // Configure page tables for virtual addresses with 0's in first 16 bits
+
+# mrs     x0, tcr_el1
+# ldr     x2, =0xfffffff8ffbf0040
+# ldr     x1, =0x000000010080751c
+# and     x0, x0, x2
+                                                  // = bic ~0x000000070040ffbf
+                                                  // => clear bits 0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 22, 32, 33, 34
+# orr     x0, x0, x1
+                                                  // => set bits 2, 3, 4, 8, 10, 12, 13, 14, 23, 32
+                                                  // => remaining cleared bits are 0, 1, 5, 7, 9, 11, 15, 22, 33, 34
+                                                  // => T0SZ [5:0] = 0b011100 = 28 => region size = 2^(64-28) = 2^36 bytes = 64 GB
+                                                  // => EPD0 [7] = 0 => perform walk on a miss
+                                                  // => IRGN0 [9:8] = 0b01 => Normal memory, Inner Write-Back Read-Allocate Write-Allocate Cacheable.
+                                                  // => ORGN0 [11:10] = 0b01 => Normal memory, Outer Write-Back Read-Allocate Write-Allocate Cacheable.
+                                                  // => SH0 [13:12] = 0b11 => Inner Shareable
+                                                  // => TG0 [15:14] = 0b01 => Granule size 64KB
+                                                  // => T1SZ [21:16] = <unchanged>
+                                                  // => A1 [22] = 0 => TTBR0_EL1.ASID defines the ASID
+                                                  // => EPD1 [23] = 1 => A TLB miss on an address that is translated using TTBR1_EL1 generates a Translation fault. No translation table walk is performed
+                                                  // => IRGN1 [25:24] = <unchanged>
+                                                  // => ORGN1 [27:26] = <unchanged>
+                                                  // => SH1 [29:28] = <unchanged>
+                                                  // => TG1 [31:30] = <unchanged> (Granule size for TTBR1_EL1)
+                                                  // => IPS [34:32] = 1 => Intermediate Physical Address size = 36 bits, 64GB.
+
+                                                  //                                           O  I                   O  I
+                                                  //                                           R  R  E                R  R  E
+                                                  //                                     T  S  G  G  P          T  S  G  G  P
+                                                  //                                     G  H  N  N  D A        G  H  N  N  D
+                                                  //                                 IPS 1  1  1  1  1 1 T1SZ   0  0  0  0  0   T0SZ
+
+                                                  //   66665555555555444444444433333 333 33 22 22 22 2 2 221111 11 11 11
+                                                  //   32109876543210987654321098765 432 10 98 76 54 3 2 109876 54 32 10 98 7 6 543210
+
+# ldr     x0, =0x0000000180100010                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 010000 00 00 00 00 0 0 010000 // working spectrum4 value
+# ldr     x0, =0x00000001801c001c                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 011100 00 00 00 00 0 0 011100 // intended spectrum4 value
+# ldr     x0, =0x000000010080751c                 // 0b00000000000000000000000000000 001 00 00 00 00 1 0 000000 01 11 01 01 0 0 011100 // circle actual value
+
+                                                  // => T0SZ [5:0] = 0b011100 = 28 = region size = 2^(64-28) = 2^36 bytes = 64GB
+                                                  // => EPD0 [7] = 0b0 = 0 => perform walk on a miss
+                                                  // => IRGN0 [9:8] = 0b00 => Normal memory, Inner Non-cacheable.
+                                                  // => ORGN0 [11:10] = 0b00 => Normal memory, Outer Non-cacheable.
+                                                  // => SH0 [13:12] = 0b00 => Non-shareable
+                                                  // => TG0 [15:14] = 0b00 => 4KB
+                                                  // => T1SZ [21:16] = 0b011100 = 28 = region size = 2^(64-28) = 2^36 bytes = 64GB
+                                                  // => A1 [22] = 0b => TTRB0_EL1.ASID defines the ASID
+                                                  // => EPD1 [23] = 0b (Perform translation table walks using TTBR1_EL1 on TLB miss)
+                                                  // => IRGN1 [25:24] = 0b00 (Normal memory, Inner Non-cacheable.)
+                                                  // => ORGN1 [27:26] = 0b00 (Normal memory, Outer Non-cacheable.)
+                                                  // => SH1 [29:28] = 0b00 (Non-shareable.)
+                                                  // => TG1 [31:30] = 0b10 => 4KB Granule size for the TTBR1_EL1.
+                                                  // => IPS [34:32] = 0b001 => Intermediate Physical Address size = 36 bits, 64GB
+  msr     tcr_el1, x0
+
+  ldr     x0, =0x000004ff
+  msr     mair_el1, x0                            // mair_el1 = 0x00000000000004ff => attr index 0 => normal, attr index 1 => device, attr index 2 => coherent
+
+                                                  //     S
+                                                  //     P
+                                                  //     I                                                                                                            C
+                                                  //     N                         T    T                             L n                                   E         P
+                                                  //   T T   E   T   E E E         W    W D           I     E M       S T               T                   n         1
+                                                  //   I M   n T C E n n n   T   T E    E S   A    T  T     n S C E E M L E       S   I S   n R n     E     R       T 5
+                                                  //   D A N T C S P A A A T M T M D    D S A T T  C  F B B F C M n n A S n U   E P E E C W T E T U D n   E C U S I H B S
+                                                  //   C S M P S O A L S S M E M T E    E B T A C  F  S T T P E O I I O M D C E 0 A I S X X W S W T Z D   O T M E T E E A S
+                                                  //   P K I 2 O 0 N S 0 R E 0 T 0 L    n S A 0 F  0  B 1 0 M n W A B E D A I E E N S B T N E 0 I C E B I S X A D D E N 0 A C A M
+
+                                                  //   6 6 6 6 5 5 5 5 5 5 5 5 5 5 4444 4 4 4 4 44 33 3 3 3 3 3 3 3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1
+                                                  //   3 2 1 0 9 8 7 6 5 4 3 2 1 0 9876 5 4 3 2 10 98 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
+
+# circle sctlr_el1: 0x0000000030d01805            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 0 1
+# spectrum4 value:  0x0000000030d00801            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1
+
+
+
+
+
+
+
+
+
+
 
   mov     x0, #0xffffffffffffffff                 // TODO
   msr     ttbr0_el1, x0
@@ -190,9 +296,6 @@ bl uart_send
   mov     x1, #0x0000000000001005                 // 0b0000000000000000000000000000000000000000000000000001000000000101
   orr     x0, x0, x1                              // 0b--------------------------------------------0------1---------101
   msr     sctlr_el1, x0
-
-mov x0, 'd'
-bl uart_send
 
   b       sleep_core
 
@@ -422,6 +525,13 @@ hex_x0:
   b.ne    1b
   ret
 
+memzero:
+1:
+  str     xzr, [x0], #8
+  subs    x1, x1, #0x8
+  b.gt    1b
+  ret
+
 msg_initialising:
 .asciz    "Initialising...\r\n"
 
@@ -493,3 +603,13 @@ VectorTable:
   b       UnexpectedStub
 .align 7
   b       UnexpectedStub
+
+
+
+
+
+.bss
+.align 16
+pg_dir:
+.space 0xa0000
+pg_dir_end:
