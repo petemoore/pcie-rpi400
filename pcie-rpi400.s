@@ -31,6 +31,10 @@ _start:
   adr     x0, msg_initialising
   bl      uart_puts
 
+  mrs     x0, currentel
+  and     x0, x0, #0x0c
+  bl      uart_x0
+
   /*
    * LOCAL_CONTROL:
    * Bit 8 clear: Increment by 1 (vs. 2).
