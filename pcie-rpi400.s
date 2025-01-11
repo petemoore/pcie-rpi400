@@ -34,6 +34,7 @@ _start:
   mrs     x0, currentel
   and     x0, x0, #0x0c
   bl      uart_x0
+  bl      uart_newline
 
   /*
    * LOCAL_CONTROL:
@@ -110,9 +111,14 @@ _start:
 
   adr     x0, 3f
   msr     elr_el3, x0
+  bl uart_x0
+  log 'a'
   eret
 
 3:
+  adrp    x0, 0x2000000
+  mov     sp, x0
+  log 'b'
   mrs     x0, currentel                           // check if already in EL1t mode?
   cmp     x0, #0x4
   b.eq    5f                                      // skip ahead, if already at EL1t, no work to do
@@ -166,14 +172,20 @@ _start:
 
   adr     x0, 5f
   msr     elr_el2, x0
+  log 'c'
   eret
 
 5:
+  adrp    x0, 0x2000000
+  mov     sp, x0
+  log 'd'
   msr     daifclr, #0x1
   msr     daifclr, #0x2
 
   adrp    x0, VectorTable
   msr     vbar_el1, x0
+
+log 'A'
 
 # Configure page tables
 
@@ -220,7 +232,9 @@ _start:
     cmp     x2, x3
     b.lt    6b
   adrp    x0, pg_dir
+log 'B'
   msr     ttbr0_el1, x0                           // Configure page tables for virtual addresses with 0's in first 16 bits
+log 'C'
 
 # mrs     x0, tcr_el1
 # ldr     x2, =0xfffffff8ffbf0040
@@ -274,6 +288,7 @@ _start:
                                                   // => TG1 [31:30] = 0b10 => 4KB Granule size for the TTBR1_EL1.
                                                   // => IPS [34:32] = 0b001 => Intermediate Physical Address size = 36 bits, 64GB
   msr     tcr_el1, x0
+log 'D'
 
   ldr     x0, =0x000004ff
   msr     mair_el1, x0                            // mair_el1 = 0x00000000000004ff => attr index 0 => normal, attr index 1 => device, attr index 2 => coherent
@@ -293,6 +308,7 @@ _start:
 
 # circle sctlr_el1: 0x0000000030d01805            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 0 1
 # spectrum4 value:  0x0000000030d00801            // 0b0 0 0 0 0 0 0 0 0 0 0 0 0 0 0000 0 0 0 0 00 00 0 0 0 0 0 0 0 0 1 1 0 0 0 0 1 1 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1
+log 'E'
 
 
 
@@ -301,6 +317,7 @@ _start:
 
   mov     x0, #0xffffffffffffffff                 // TODO
   msr     ttbr0_el1, x0
+log 'F'
 
   mrs     x0, tcr_el1
   ldr     x2, =0xfffffff9ffbf755c                 // 0b1111111111111111111111111111100111111111101111110111010101011100
@@ -308,6 +325,7 @@ _start:
   ldr     x1, =0x000000010080751c                 // 0b0000000000000000000000000000000100000000100000000111010100011100
   orr     x0, x0, x1                              // 0b-----------------------------001--------10------011101010-011100
   msr     tcr_el1, x0
+log 'G'
 
   mrs     x0, sctlr_el1
   ldr     x2, =0xfffffffffff7fffd                 // 0b1111111111111111111111111111111111111111111101111111111111111101
@@ -315,6 +333,7 @@ _start:
   mov     x1, #0x0000000000001005                 // 0b0000000000000000000000000000000000000000000000000001000000000101
   orr     x0, x0, x1                              // 0b--------------------------------------------0------1---------101
   msr     sctlr_el1, x0
+log 'H'
 
   b       sleep_core
 
@@ -333,16 +352,24 @@ SErrorStub:
   b       ExceptionHandler
 
 IRQStub:
+  log 'e'
   eret
+  log 'f'
 
 FIQStub:
+  log 'g'
   eret
+  log 'h'
 
 SMCStub:
+  log 'i'
   eret
+  log 'j'
 
 HVCStub:
+  log 'k'
   eret
+  log 'l'
 
 ExceptionHandler:
   b       sleep_core
