@@ -123,16 +123,12 @@ _start:
   cmp     x0, #0x4
   b.eq    5f                                      // skip ahead, if already at EL1t, no work to do
 
-4:
   ldr     x0, =0x00000000002a0000                 // main thread runs in EL1t and uses sp_el0
   mov     sp, x0                                  // init its stack
-  adrp    x0, VectorTable                         // init exception vector table for EL2
-  msr     vbar_el1, x0
 
   adrp    x0, 0x2001000                           // IRQ, FIQ and exception handler run in EL1h
   msr     sp_el1, x0                              // init their stack
-
-  adrp    x0, VectorTable                         // init exception vector table
+  adrp    x0, VectorTable                         // init exception vector table for EL2
   msr     vbar_el2, x0
 
   mrs     x0, cnthctl_el2                         // Initialize Generic Timers
@@ -179,11 +175,12 @@ _start:
   adrp    x0, 0x2000000
   mov     sp, x0
   log 'd'
-  msr     daifclr, #0x1
-  msr     daifclr, #0x2
 
   adrp    x0, VectorTable
   msr     vbar_el1, x0
+
+  msr     daifclr, #0x1
+  msr     daifclr, #0x2
 
 log 'A'
 
@@ -231,6 +228,10 @@ log 'A'
     add     x2, x2, #0x200000
     cmp     x2, x3
     b.lt    6b
+
+  ldr     x0, =0x000004ff
+  msr     mair_el1, x0                            // mair_el1 = 0x00000000000004ff => attr index 0 => normal, attr index 1 => device, attr index 2 => coherent
+
   adrp    x0, pg_dir
 log 'B'
   msr     ttbr0_el1, x0                           // Configure page tables for virtual addresses with 0's in first 16 bits
@@ -271,7 +272,7 @@ log 'C'
 
 # ldr     x0, =0x0000000180100010                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 010000 00 00 00 00 0 0 010000 // working spectrum4 value
 # ldr     x0, =0x00000001801c001c                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 011100 00 00 00 00 0 0 011100 // intended spectrum4 value
-  ldr     x0, =0x000000010080751c                 // 0b00000000000000000000000000000 001 00 00 00 00 1 0 000000 01 11 01 01 0 0 011100 // circle actual value
+# ldr     x0, =0x000000010080751c                 // 0b00000000000000000000000000000 001 00 00 00 00 1 0 000000 01 11 01 01 0 0 011100 // circle actual value
 
                                                   // => T0SZ [5:0] = 0b011100 = 28 = region size = 2^(64-28) = 2^36 bytes = 64GB
                                                   // => EPD0 [7] = 0b0 = 0 => perform walk on a miss
@@ -287,11 +288,9 @@ log 'C'
                                                   // => SH1 [29:28] = 0b00 (Non-shareable.)
                                                   // => TG1 [31:30] = 0b10 => 4KB Granule size for the TTBR1_EL1.
                                                   // => IPS [34:32] = 0b001 => Intermediate Physical Address size = 36 bits, 64GB
-  msr     tcr_el1, x0
+# msr     tcr_el1, x0
 log 'D'
 
-  ldr     x0, =0x000004ff
-  msr     mair_el1, x0                            // mair_el1 = 0x00000000000004ff => attr index 0 => normal, attr index 1 => device, attr index 2 => coherent
 
                                                   //     S
                                                   //     P
@@ -333,6 +332,7 @@ log 'G'
   mov     x1, #0x0000000000001005                 // 0b0000000000000000000000000000000000000000000000000001000000000101
   orr     x0, x0, x1                              // 0b--------------------------------------------0------1---------101
   msr     sctlr_el1, x0
+  isb
 log 'H'
 
   b       sleep_core
