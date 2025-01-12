@@ -271,7 +271,7 @@ log 'C'
 
 # ldr     x0, =0x0000000180100010                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 010000 00 00 00 00 0 0 010000 // working spectrum4 value
 # ldr     x0, =0x00000001801c001c                 // 0b00000000000000000000000000000 001 10 00 00 00 0 0 011100 00 00 00 00 0 0 011100 // intended spectrum4 value
-# ldr     x0, =0x000000010080751c                 // 0b00000000000000000000000000000 001 00 00 00 00 1 0 000000 01 11 01 01 0 0 011100 // circle actual value
+  ldr     x0, =0x000000010080751c                 // 0b00000000000000000000000000000 001 00 00 00 00 1 0 000000 01 11 01 01 0 0 011100 // circle actual value
 
                                                   // => T0SZ [5:0] = 0b011100 = 28 = region size = 2^(64-28) = 2^36 bytes = 64GB
                                                   // => EPD0 [7] = 0b0 = 0 => perform walk on a miss
@@ -315,8 +315,8 @@ log 'E'
 
 
 
-  mov     x0, #0xffffffffffffffff                 // TODO
-  msr     ttbr0_el1, x0
+# mov     x0, #0xffffffffffffffff                 // TODO
+# msr     ttbr0_el1, x0
 log 'F'
 
   mrs     x0, tcr_el1
