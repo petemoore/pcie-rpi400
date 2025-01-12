@@ -229,6 +229,8 @@ log 'A'
     cmp     x2, x3
     b.lt    6b
 
+  dsb     sy                                      // Data Sync Barrier
+
   ldr     x0, =0x000004ff
   msr     mair_el1, x0                            // mair_el1 = 0x00000000000004ff => attr index 0 => normal, attr index 1 => device, attr index 2 => coherent
 
