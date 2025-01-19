@@ -192,9 +192,6 @@ log 'A'
   adrp    x0, pg_dir
   mov     x1, #0x1003
   add     x1, x0, x1
-  str     x1, [x0]                                // [pg_dir] = pg_dir + 0x1003. PGD table complete, only one entry required.
-  add     x0, x0, #0x1000
-  add     x1, x1, #0x1000
   ldr     x3, =0x0000000100000000
   lsr     x2, x3, #30
   3:
@@ -202,7 +199,7 @@ log 'A'
     add     x1, x1, #0x1000
     subs    x2, x2, #0x1
     b.ne    3b
-  adrp    x0, (pg_dir+0x2000)
+  adrp    x0, (pg_dir+0x1000)
   mov     x1, #0x401                              // bit 10: AF=1, bits 2-4: mair attr index = 0 (normal), bits 0-1: 1 (block descriptor)
   ldr     x2, =0x00000000fc000000
   4:                                              // creates 2016 entries for 0x00000000 - 0xfc000000
@@ -216,8 +213,8 @@ log 'A'
     add     x1, x1, #0x200000
     cmp     x1, x3
     b.lt    5b
-  adrp    x0, (pg_dir+0x1000)
-  adrp    x1, (pg_dir+0x6000)
+  adrp    x0, pg_dir
+  adrp    x1, (pg_dir+0x5000)
   orr     x2, x1, #0b11                           // bit 0 = 1 => valid descriptor. bit 1 = 1 => table descriptor
   str     x2, [x0, 0xc0]                          // [pg_dir+0x10c0] = pg_dir+0x6003. PUD table entry for xHCI region (entry 0x600000000-0x640000000 covers more than xHCI).
   mov     x2, 0x600000000                         // x2 = xHCI start (24GB)
@@ -659,5 +656,5 @@ VectorTable:
 .bss
 .align 16
 pg_dir:
-.space 0xa0000
+.space 0x90000
 pg_dir_end:
